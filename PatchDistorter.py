@@ -12,55 +12,71 @@ class PatchDistorter:
 
 		x = np.arange(patch_size)
 		y = np.arange(patch_size)
-		points_xy = np.transpose([np.tile(x, len(y)), np.repeat(y, len(x))])	
+		points_xy = np.transpose([np.repeat(y, len(x)), np.tile(x, len(y))])	
 
 		patch_R = patch[:,:,0].flatten()
 		patch_G = patch[:,:,1].flatten()
 		patch_B = patch[:,:,2].flatten()
 
 		R, C = np.meshgrid(np.arange(patch_size)-patch_size/2,np.arange(patch_size)-patch_size/2)
-		mask_size = 8
-		# mask = (R**2 + C**2) < mask_size**2 && R<0 && C<0
+		mask_size = 5
 		mask = np.logical_and((R**2 + C**2) < mask_size**2,np.logical_and(R<0,C<0))
 
 		of_u1 = self.getOf(patch_size, mask)
 		of_v1 = self.getOf(patch_size, mask)
 
-		forward_map_R1 = R[16:80,16:80] + of_u1[16:80,16:80] + patch_size/2
-		# forward_map_R1 = R + of_u1 + patch_size/2
-		forward_map_C1 = C[16:80,16:80] + of_v1[16:80,16:80] + patch_size/2
-		# forward_map_C1 = C + of_v1 + patch_size/2
-		# forward_map_R1[forward_map_R1<0]=0; forward_map_R1[forward_map_R1>95] = 95
-		# forward_map_C1[forward_map_C1<0]=0; forward_map_C1[forward_map_C1>95] = 95
-		warpedPatch1 = patch[forward_map_C1.astype(int),forward_map_R1.astype(int),:]
+		reverse_map_R1 = R[16:80,16:80] + of_u1[16:80,16:80] + patch_size/2
+		reverse_map_C1 = C[16:80,16:80] + of_v1[16:80,16:80] + patch_size/2
+		# reverse_map_R1 = R + of_u1 + patch_size/2
+		# reverse_map_C1 = C + of_v1 + patch_size/2
+		# reverse_map_R1[reverse_map_R1<0]=0; reverse_map_R1[reverse_map_R1>95] = 95
+		# reverse_map_C1[reverse_map_C1<0]=0; reverse_map_C1[reverse_map_C1>95] = 95
+		warpedPatch = patch[reverse_map_C1.astype(int),reverse_map_R1.astype(int),:]
 
-		warpedPatch_R = interpolate.griddata(points_xy, patch_R, (forward_map_R1,forward_map_C1), method = 'linear')
-		warpedPatch_G = interpolate.griddata(points_xy, patch_G, (forward_map_R1,forward_map_C1), method = 'linear')
-		warpedPatch_B = interpolate.griddata(points_xy, patch_B, (forward_map_R1,forward_map_C1), method = 'linear')
+		warpedPatch_R = interpolate.griddata(points_xy, patch_R, (reverse_map_C1,reverse_map_R1), method = 'linear')
+		warpedPatch_G = interpolate.griddata(points_xy, patch_G, (reverse_map_C1,reverse_map_R1), method = 'linear')
+		warpedPatch_B = interpolate.griddata(points_xy, patch_B, (reverse_map_C1,reverse_map_R1), method = 'linear')
+
+		warpedPatch_R[warpedPatch_R<0.0] = 0.0; warpedPatch_R[warpedPatch_R>255.0] = 255.0;
+		warpedPatch_G[warpedPatch_G<0.0] = 0.0; warpedPatch_G[warpedPatch_G>255.0] = 255.0;
+		warpedPatch_B[warpedPatch_B<0.0] = 0.0; warpedPatch_B[warpedPatch_B>255.0] = 255.0;		
+
+		warpedPatch1 = np.dstack((np.dstack((warpedPatch_R, warpedPatch_G)),warpedPatch_B))
+		warpedPatch1 = cv2.normalize(warpedPatch1, None, 255,0, cv2.NORM_MINMAX, cv2.CV_8UC1)
+		# print(warpedPatch1)
+		# print(warpedPatch1-warpedPatch2)
+
+
+		of_u2 = self.getOf(patch_size, mask)
+		of_v2 = self.getOf(patch_size, mask)
+		
+		reverse_map_R = R + of_u2 + patch_size/2
+		reverse_map_C = C + of_v2 + patch_size/2
+		ofu1 = of_u1.flatten()
+		ofv1 = of_v1.flatten()
+
+		interp_ofu1 = interpolate.griddata(points_xy, ofu1, (reverse_map_C,reverse_map_R), method = 'linear')
+		interp_ofv1 = interpolate.griddata(points_xy, ofv1, (reverse_map_C,reverse_map_R), method = 'linear')
+
+		reverse_map_R2 = R[16:80,16:80] + interp_ofu1[16:80,16:80] + patch_size/2
+		reverse_map_C2 = C[16:80,16:80] + interp_ofv1[16:80,16:80] + patch_size/2
+
+		# reverse_map_R2 = R[16:80,16:80] + of_u2[16:80,16:80] + patch_size/2
+		# reverse_map_C2 = C[16:80,16:80] + of_v2[16:80,16:80] + patch_size/2
+
+		warpedPatch_R = interpolate.griddata(points_xy, patch_R, (reverse_map_C2,reverse_map_R2), method = 'linear')
+		warpedPatch_G = interpolate.griddata(points_xy, patch_G, (reverse_map_C2,reverse_map_R2), method = 'linear')
+		warpedPatch_B = interpolate.griddata(points_xy, patch_B, (reverse_map_C2,reverse_map_R2), method = 'linear')
+
+		warpedPatch_R[warpedPatch_R<0.0] = 0.0; warpedPatch_R[warpedPatch_R>255.0] = 255.0;
+		warpedPatch_G[warpedPatch_G<0.0] = 0.0; warpedPatch_G[warpedPatch_G>255.0] = 255.0;
+		warpedPatch_B[warpedPatch_B<0.0] = 0.0; warpedPatch_B[warpedPatch_B>255.0] = 255.0;		
 
 		warpedPatch2 = np.dstack((np.dstack((warpedPatch_R, warpedPatch_G)),warpedPatch_B))
+		warpedPatch2 = cv2.normalize(warpedPatch2, None, 255,0, cv2.NORM_MINMAX, cv2.CV_8UC1)
 
-		# R1 = forward_map_R1.flatten()
-		# C1 = forward_map_C1.flatten()
-		# warpedPatch = np.array((Fr(R1, C1), Fg(R1,C1), Fb(R1, C1)), dtype = np.uint8)
-		# return np.shape(of_u1)
-		# warpedPatch1 = np.reshape(warpedPatch, (96,96,3))
-		# warpedPatch1 = np.array((Fr(forward_map_R1, forward_map_C1), Fg(forward_map_R1,forward_map_C1), Fc(forward_map_R1, forward_map_R1)), dtype = np.uint8)
-
-		# of_u2 = self.getOf(patch_size, mask)
-		# of_v2 = self.getOf(patch_size, mask)
-		# forward_map_R2 = R[16:80,16:80] + of_u2[16:80,16:80] + patch_size/2
-		# forward_map_R2 = R + of_u2 + patch_size/2
-		# forward_map_C2 = C[16:80,16:80] + of_v2[16:80,16:80] + patch_size/2
-		# forward_map_C2 = C + of_v2 + patch_size/2
-		# forward_map_R1[forward_map_R1<0]=0; forward_map_R1[forward_map_R1>95] = 95
-		# forward_map_C1[forward_map_C1<0]=0; forward_map_C1[forward_map_C1>95] = 95
-		# warpedPatch2 = patch[forward_map_C2.astype(int),forward_map_R2.astype(int),:]
-
-		# of_u = of_u2 - of_u1
-		# of_v = of_v2 - of_v1
-		# of = np.sqrt((of_u**2 + of_v**2))
-		# warpedOf = of[forward_map_C1.astype(int),forward_map_R1.astype(int)]
+		# cv2.imshow('', warpedPatch1-warpedPatch2)
+		# cv2.waitKey(0)
 
 		return warpedPatch1, warpedPatch2
 		# return warpedPatch1, warpedPatch2, warpedOf
@@ -88,10 +104,10 @@ testPatches = random.sample(imagePatches,50)
 Distorter = PatchDistorter()
 
 test_patch = testPatches[2]
-w1,w2 = Distorter.getRandDistortion(test_patch)
-# print(w1)
-# print(w2)
 cv2.imshow('patch', test_patch)
 cv2.waitKey(0)
-cv2.imshow('w1', w2)
+w1,w2 = Distorter.getRandDistortion(test_patch)
+cv2.imshow('w1', w1)
+cv2.waitKey(0)
+cv2.imshow('w2', w2)
 cv2.waitKey(0)
